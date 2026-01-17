@@ -20,7 +20,7 @@ const updateUI = () => {
     const g = state.game;
     ['time','totl','step','earn','prin','rate','cost','freq'].forEach(k => 
         $('s-'+k).textContent = g[k+'_str']());
-    $('freq').value = g.freq_str().split('.')[0];
+    $('freq').value = g.freq_str();
 };
 
 const drawChart = (cv, ctx, isLog) => {
@@ -28,10 +28,26 @@ const drawChart = (cv, ctx, isLog) => {
     ctx.clearRect(0, 0, w, h);
     if (state.history.length < 2) return;
     
-    const logs = state.history.map(x => x.log10);
+    const logs = state.history.map(x => x.neg ? -Math.abs(x.log10) : x.log10);
     const [minL, maxL] = [Math.min(...logs), Math.max(...logs)];
-    const vals = isLog ? logs : logs.map(v => Math.pow(10, v - minL));
-    const [minV, maxV] = isLog ? [minL - (maxL-minL)*0.05 - 0.1, maxL + (maxL-minL)*0.05 + 0.1] : [0, Math.max(...vals)];
+    const range = maxL - minL || 1;
+    
+    let vals, minV, maxV;
+    if (isLog) {
+        vals = logs;
+        minV = minL - range * 0.05 - 0.1;
+        maxV = maxL + range * 0.05 + 0.1;
+    } else {
+        const absLogs = state.history.map(x => Math.abs(x.log10));
+        const minAbs = Math.min(...absLogs);
+        vals = state.history.map(x => {
+            const rel = Math.abs(x.log10) - minAbs;
+            const v = Math.pow(10, Math.min(rel, 300));
+            return x.neg ? -v : v;
+        });
+        minV = Math.min(...vals, 0);
+        maxV = Math.max(...vals);
+    }
     const rng = maxV - minV || 1;
     const toY = v => p + (h-p*2) * (1 - (v-minV)/rng);
     const toX = i => p + (w-p*2) * i / (vals.length-1);
@@ -43,8 +59,23 @@ const drawChart = (cv, ctx, isLog) => {
     }
     ctx.fillStyle = '#4a5568'; ctx.font = '10px sans-serif'; ctx.textAlign = 'right';
     for (let i = 0; i <= 5; i++) {
-        const y = p + (h-p*2)*i/5, v = maxV - rng*i/5;
-        ctx.fillText(isLog ? v.toFixed(1) : '1e'+(minL + (maxL-minL)*(1-i/5)).toFixed(0), p-5, y+3);
+        const y = p + (h-p*2)*i/5;
+        if (isLog) {
+            const v = (maxV + range*0.05 + 0.1) - (maxV - minV + range*0.1 + 0.2)*i/5;
+            ctx.fillText(v.toFixed(1), p-5, y+3);
+        } else {
+            const ratio = 1 - i/5;
+            const logVal = minL + range * ratio;
+            const mantissa = Math.pow(10, logVal - Math.floor(logVal));
+            ctx.fillText(mantissa.toFixed(2) + 'e' + Math.floor(logVal), p-5, y+3);
+        }
+    }
+
+    const zeroY = toY(0);
+    if (!isLog && minV < 0 && maxV > 0) {
+        ctx.strokeStyle = '#4a5568'; ctx.setLineDash([5,5]);
+        ctx.beginPath(); ctx.moveTo(p, zeroY); ctx.lineTo(w-p, zeroY); ctx.stroke();
+        ctx.setLineDash([]);
     }
 
     const grad = ctx.createLinearGradient(0, p, 0, h-p);
@@ -69,7 +100,11 @@ const loop = now => {
         state.game.tick(String((now - lastT) / 1000));
         const last = state.history.at(-1);
         if (!last || now - last.t > 30) {
-            state.history.push({ log10: state.game.totl_log10(), t: now });
+            state.history.push({ 
+                log10: state.game.totl_log10(), 
+                neg: state.game.totl_negative(),
+                t: now 
+            });
             if (state.history.length > state.size) { state.history.shift(); state.harvestIdx = Math.max(0, state.harvestIdx-1); }
         }
         updateUI(); draw();
@@ -86,7 +121,7 @@ window.addEventListener('keydown', e => {
         e.preventDefault();
         if (!state.started) {
             state.started = true;
-            state.history.push({ log10: state.game.prin_log10(), t: performance.now() });
+            state.history.push({ log10: state.game.prin_log10(), neg: false, t: performance.now() });
             $('hint').textContent = '[Enter] Harvest | [Space] Replay';
         } else state.game.harv();
         state.harvestIdx = state.history.length;

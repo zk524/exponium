@@ -173,6 +173,13 @@ export class WasmGame {
         return ret;
     }
     /**
+     * @returns {boolean}
+     */
+    totl_negative() {
+        const ret = wasm.wasmgame_totl_negative(this.__wbg_ptr);
+        return ret !== 0;
+    }
+    /**
      * @returns {string}
      */
     totl_str() {
